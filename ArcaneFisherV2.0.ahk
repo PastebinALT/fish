@@ -387,7 +387,7 @@ Reel(index, hwnd)
 
     ; Optional new file: play foxy.wav when a catch is detected.
     if FileExist("foxy.wav")
-        SoundPlay, foxy.wav, 0
+        SoundPlay, foxy.wav
 
     if (index = 1)
     {
