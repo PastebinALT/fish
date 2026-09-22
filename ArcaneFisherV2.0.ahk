@@ -10,47 +10,44 @@ CoordMode, Mouse, Screen
 SetTitleMatchMode, 2
 
 ; ============================================================
-; Arcane Fisher V2.0
+; Arcane Fisher V2.1
 ; AHK v1
-; Requires: assets\Gdip_All.ahk
 ;
-; Improvements over the original:
-; - Clear variable/function names
-; - Per-window state instead of shared reel/recast state
-; - Does not require Roblox to stay focused while scanning
-; - Tighter scan regions
-; - Debounced color detection to reduce false catches
-; - Per-instance cooldowns
-; - Safer two-instance handling
-; - Settings are easy to tune
+; Files expected beside this script:
+;   Gdip_All.ahk
+;   settings.ini
+;   fish.ico       (optional)
+;   foxy.wav       (optional catch sound)
+;   foxy.gif       (optional artwork; not required by scanner)
 ; ============================================================
 
+; ---------- Load settings.ini ----------
+IniRead, RodSlider, settings.ini, Config, RodSlider, 9
+if (RodSlider = 10)
+    RodKey := "0"
+else
+    RodKey := RodSlider
+
+IniRead, SystemCanFish, settings.ini, System, CanFish, 1
+if (SystemCanFish != 1)
+    RodKey := ""
+
 ; ---------- User settings ----------
-global RodKey := "9"
+global RodKey := RodKey
 global ScanInterval := 35
 global CatchCooldown := 900
 global RecastDelay := 650
 global CastDoubleClickGap := 120
 global CenterYOffset := 100
 
-; Brightness/catch indicator detection.
-; Increase BrightThreshold if dark scenes cause false positives.
 global BrightThreshold := 175
 global BrightRequired := 5
 
-; Event color is green-ish in the fishing UI.
 global EventR := 20
 global EventG := 220
 global EventB := 20
 global EventTolerance := 38
 global EventRequired := 2
-
-; Optional global indicators.
-global GlobalR := 255
-global GlobalG := 0
-global GlobalB := 0
-global GlobalTolerance := 30
-global GlobalRequired := 2
 
 global Running := false
 global MultiInstance := true
@@ -68,14 +65,23 @@ global ScanAfter1 := 0
 global ScanAfter2 := 0
 
 OnExit, Cleanup
-if !FileExist("assets")
-    FileCreateDir, assets
+
+; Gdip_All.ahk is now at the repository root.
+if !FileExist("Gdip_All.ahk")
+{
+    MsgBox, 48, Error, Gdip_All.ahk was not found beside the script.
+    ExitApp
+}
 
 if !pToken := Gdip_Startup()
 {
-    MsgBox, 48, Error, GDI+ failed to start.`nMake sure assets\Gdip_All.ahk exists.
+    MsgBox, 48, Error, GDI+ failed to start.
     ExitApp
 }
+
+; Optional tray icon from the new repo files.
+if FileExist("fish.ico")
+    Menu, Tray, Icon, fish.ico
 
 ; ---------- GUI ----------
 Gui, Main:+AlwaysOnTop -MaximizeBox
@@ -87,7 +93,7 @@ Gui, Main:Add, Button, gToggleMacro w300 y+12, Start / Stop Autofish (F1)
 Gui, Main:Add, CheckBox, vMultiBox gToggleMulti Checked, Multi-Instance
 Gui, Main:Add, CheckBox, vOverlayBox gToggleOverlay Checked, Show Scan Overlay
 Gui, Main:Add, Text, vInfo w300 y+12 Center, Rod key: %RodKey%  |  Scan: %ScanInterval% ms
-Gui, Main:Show, w340 h180, Arcane Fisher V2.0
+Gui, Main:Show, w340 h180, Arcane Fisher V2.1
 
 SetTimer, DiscoverRoblox, 1000
 SetTimer, ScanLoop, %ScanInterval%
@@ -208,7 +214,6 @@ ScanInstance(index, hwnd)
         scanAfter := ScanAfter2
     }
 
-    ; Never process the same client too rapidly.
     if (now - lastAction < CatchCooldown)
         return
 
@@ -219,14 +224,11 @@ ScanInstance(index, hwnd)
     if ErrorLevel || ww < 400 || wh < 300
         return
 
-    ; Fishing indicator is normally near the center.
-    ; Keep the region small so unrelated UI pixels don't trigger it.
     shortSide := (ww < wh ? ww : wh)
     box := Round(shortSide * 0.22)
     sx := wx + (ww // 2) - (box // 2)
     sy := wy + (wh // 2) - (box // 2) - CenterYOffset
 
-    ; Event indicator is normally on the right side of the client.
     eventW := Round(ww * 0.28)
     eventH := Round(wh * 0.50)
     ex := wx + ww - eventW
@@ -238,7 +240,6 @@ ScanInstance(index, hwnd)
     if ShowOverlay
         DrawOverlay(index, sx, sy, box, event)
 
-    ; A catch requires a stable-looking indicator rather than one lucky pixel.
     if (bright >= BrightRequired && event >= EventRequired)
     {
         if (state != "reeling")
@@ -250,8 +251,7 @@ ScanInstance(index, hwnd)
         return
     }
 
-    ; If the client has been casting for a long time without a catch,
-    ; recast rather than remaining stuck forever.
+    ; Recast if this client has been stuck for 45 seconds.
     if (lastCast && now - lastCast > 45000)
     {
         Recast(index, hwnd)
@@ -279,7 +279,6 @@ ScanInstance(index, hwnd)
 
 CountBright(x, y, w, h, threshold)
 {
-    ; Sample every 8 pixels. This is much cheaper than scanning every pixel.
     count := 0
     step := 8
 
@@ -330,7 +329,7 @@ CountNearColor(x, y, w, h, tr, tg, tb, tolerance)
 ; ---------- Fishing actions ----------
 PrepareWindows()
 {
-    global Win1, Win2, MultiInstance, RodKey
+    global Win1, Win2, MultiInstance
     global LastCast1, LastCast2, ScanAfter1, ScanAfter2
     global State1, State2
 
@@ -356,15 +355,16 @@ Cast(hwnd)
 {
     global RodKey, CastDoubleClickGap
 
+    if (RodKey = "")
+        return
+
     WinGetPos, x, y, w, h, ahk_id %hwnd%
     cx := x + (w // 2)
     cy := y + (h // 2)
 
-    ; Click the Roblox viewport to ensure input goes to the game.
     ControlClick, x%cx% y%cy%, ahk_id %hwnd%, , Left, 1, NA
     Sleep, %CastDoubleClickGap%
     ControlClick, x%cx% y%cy%, ahk_id %hwnd%, , Left, 1, NA
-
     Sleep, 120
     ControlSend,, %RodKey%, ahk_id %hwnd%
 }
@@ -374,16 +374,21 @@ Reel(index, hwnd)
     global RodKey, RecastDelay
     global LastCast1, LastCast2, ScanAfter1, ScanAfter2
 
+    if (RodKey = "")
+        return
+
     WinGetPos, x, y, w, h, ahk_id %hwnd%
     cx := x + (w // 2)
     cy := y + (h // 2)
 
-    ; Do not permanently steal focus.
     ControlClick, x%cx% y%cy%, ahk_id %hwnd%, , Left, 1, NA
     Sleep, 90
     ControlSend,, %RodKey%, ahk_id %hwnd%
 
-    ; Give the game a short settling period before scanning again.
+    ; Optional new file: play foxy.wav when a catch is detected.
+    if FileExist("foxy.wav")
+        SoundPlay, foxy.wav, 0
+
     if (index = 1)
     {
         LastCast1 := A_TickCount
@@ -395,33 +400,44 @@ Reel(index, hwnd)
         ScanAfter2 := A_TickCount + RecastDelay
     }
 
-    ; Recast after the catch sequence.
     SetTimer, Recast1, Off
     SetTimer, Recast2, Off
+
     if (index = 1)
         SetTimer, Recast1, -850
     else
         SetTimer, Recast2, -850
 }
 
+Recast(index, hwnd)
+{
+    global LastCast1, LastCast2, ScanAfter1, ScanAfter2
+    global State1, State2, RecastDelay
+
+    Cast(hwnd)
+
+    if (index = 1)
+    {
+        LastCast1 := A_TickCount
+        ScanAfter1 := A_TickCount + 1800
+        State1 := "casting"
+    }
+    else
+    {
+        LastCast2 := A_TickCount
+        ScanAfter2 := A_TickCount + 1800
+        State2 := "casting"
+    }
+}
+
 Recast1:
 if Running && Win1
-{
-    Cast(Win1)
-    LastCast1 := A_TickCount
-    ScanAfter1 := A_TickCount + 1800
-    State1 := "casting"
-}
+    Recast(1, Win1)
 return
 
 Recast2:
 if Running && Win2
-{
-    Cast(Win2)
-    LastCast2 := A_TickCount
-    ScanAfter2 := A_TickCount + 1800
-    State2 := "casting"
-}
+    Recast(2, Win2)
 return
 
 ; ---------- Overlay ----------
@@ -436,7 +452,12 @@ DrawOverlay(index, x, y, w, event)
 
     Gui, %guiName%:Destroy
     Gui, %guiName%:+AlwaysOnTop -Caption +ToolWindow +E0x20
-    Gui, %guiName%:Color, % (event > 2 ? "00AA55" : "AA3333")
+
+    if (event > 2)
+        Gui, %guiName%:Color, 00AA55
+    else
+        Gui, %guiName%:Color, AA3333
+
     WinSet, Transparent, 80
     Gui, %guiName%:Show, x%x% y%y% w%w% h%w% NoActivate
 }
@@ -469,4 +490,4 @@ GuiClose:
 ExitApp
 return
 
-#Include assets\Gdip_All.ahk
+#Include Gdip_All.ahk
