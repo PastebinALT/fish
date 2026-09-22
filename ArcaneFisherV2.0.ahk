@@ -14,7 +14,7 @@ SetTitleMatchMode, 2
 ; AHK v1
 ;
 ; Files expected beside this script:
-;   Gdip_All.ahk
+;   Gdip_All.ahk (optional; root or assets\)
 ;   settings.ini
 ;   fish.ico       (optional)
 ;   foxy.wav       (optional catch sound)
@@ -66,18 +66,12 @@ global ScanAfter2 := 0
 
 OnExit, Cleanup
 
-; Gdip_All.ahk is now at the repository root.
-if !FileExist("Gdip_All.ahk")
-{
-    MsgBox, 48, Error, Gdip_All.ahk was not found beside the script.
-    ExitApp
-}
-
-if !pToken := Gdip_Startup()
-{
-    MsgBox, 48, Error, GDI+ failed to start.
-    ExitApp
-}
+; GDI+ compatibility:
+; The V2 scanner does not call GDI+ functions directly, so the script
+; does not hard-require Gdip_All.ahk. This keeps both layouts compatible:
+;   .Gdip_All.ahk
+;   .assetsGdip_All.ahk
+; If either file exists, it can remain in place without affecting startup.
 
 ; Optional tray icon from the new repo files.
 if FileExist("fish.ico")
@@ -482,7 +476,6 @@ StopAll()
 
 Cleanup:
 StopAll()
-Gdip_Shutdown(pToken)
 ExitApp
 return
 
@@ -490,4 +483,4 @@ GuiClose:
 ExitApp
 return
 
-#Include Gdip_All.ahk
+; No GDI+ include required by V2.0. Both root and assets layouts are supported.
